@@ -1,4 +1,7 @@
 # Erlang 全局存储器
+[![cn](https://img.shields.io/badge/lang-中文-blue.svg)](https://github.com/lafirest/erlang_global_store/blob/main/README.md)
+[![en](https://img.shields.io/badge/lang-English-red.svg)](https://github.com/lafirest/erlang_global_store/blob/main/README_en.md)
+
 ------
    一个简单的Erlang全局数据共享APP
 ## 缘由
