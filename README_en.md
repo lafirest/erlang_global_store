@@ -1,4 +1,7 @@
 # Erlang global store
+[![cn](https://img.shields.io/badge/lang-中文-blue.svg)](https://github.com/lafirest/erlang_global_store/blob/main/README.md)
+[![en](https://img.shields.io/badge/lang-English-red.svg)](https://github.com/lafirest/erlang_global_store/blob/main/README_en.md)
+
 ------
 ***Note: Because my English is very bad, so this md is based on google translation***
 
