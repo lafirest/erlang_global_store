@@ -23,8 +23,9 @@
 ## 使用
 ### 环境变量配置:
    需要在application env中提供以下两个变量:
-       1. arbiter 裁决服务器，用于在新节点登录时，获取旧的数据
-       2. sync_delay 同步延迟
+     
+      1. arbiter 裁决服务器，用于在新节点登录时，获取旧的数据
+      2. sync_delay 同步延迟
    如果是使用rebar,则直接在sys.config中加入以下设置即可
 ```Erlang
     {gs, [{arbiter, 's1@127.0.0.1'}, {sync_delay, 100}]}
