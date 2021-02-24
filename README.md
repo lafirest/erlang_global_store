@@ -1,2 +1,9 @@
-# sds
-simple distributed storage for erlang
+sds
+=====
+
+An OTP application
+
+Build
+-----
+
+    $ rebar3 compile
