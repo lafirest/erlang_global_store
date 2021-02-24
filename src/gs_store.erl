@@ -48,9 +48,6 @@
 -record(group_value, {value :: term(),
                       node :: node()}).
 
--type sync_type() :: local
-                   | urgent
-                   | delayed.
 
 -define(make_message(S, V1), {message, S, {?FUNCTION_NAME, V1}}).
 -define(make_message(S, V1, V2), {message, S, {?FUNCTION_NAME, V1, V2}}).
@@ -62,7 +59,7 @@
 insert(Key, Value) ->
     insert(Key, Value, delayed).
 
--spec insert(term(), term(), sync_type()) -> ok.
+-spec insert(term(), term(), gs:sync_type()) -> ok.
 insert(Key, Value, SyncType) ->
     gen_server:call(?SERVER, ?make_message(SyncType, Key, Value)).
 
@@ -70,7 +67,7 @@ insert(Key, Value, SyncType) ->
 delete(Key) ->
     delete(Key, delayed).
 
--spec delete(term(), sync_type()) -> ok.
+-spec delete(term(), gs:sync_type()) -> ok.
 delete(Key, SyncType) ->
     gen_server:call(?SERVER, ?make_message(SyncType, Key)).
 
@@ -78,7 +75,7 @@ delete(Key, SyncType) ->
 join_group(Group, Value) ->
     join_group(Group, Value, delayed).
 
--spec join_group(term(), term(), sync_type()) -> ok.
+-spec join_group(term(), term(), gs:sync_type()) -> ok.
 join_group(Group, Value, SyncType) ->
     gen_server:call(?SERVER, ?make_message(SyncType, Group, Value)).
 
@@ -86,13 +83,9 @@ join_group(Group, Value, SyncType) ->
 exit_group(Group, Value) ->
     exit_group(Group, Value, delayed).
 
--spec exit_group(term(), term(), sync_type()) -> ok.
+-spec exit_group(term(), term(), gs:sync_type()) -> ok.
 exit_group(Group, Value, SyncType) ->
     gen_server:call(?SERVER, ?make_message(SyncType, Group, Value)).
-
--spec remote_sync(node(), list(term())) -> ok.
-remote_sync(Node, Messages) ->
-    gen_server:cast({?SERVER, Node}, {?FUNCTION_NAME, node(), Messages}).
 
 -spec find(term()) -> undefined | term().
 find(Key) ->
@@ -113,7 +106,11 @@ traverse_group(GroupName, Fun) ->
             traverse_group_next(Iter, Fun),
             ok
     end.
-    
+
+-spec remote_sync(node(), list(term())) -> ok.
+remote_sync(Node, Messages) ->
+    gen_server:cast({?SERVER, Node}, {?FUNCTION_NAME, node(), Messages}).
+
 %%--------------------------------------------------------------------
 %% @doc
 %% Starts the server
