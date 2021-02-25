@@ -10,8 +10,10 @@
    所以最后我就写了这个默认基于一小段延迟的写同步内存字典
 
 ## 实现的功能:
+   * 基于net_adm:world()实现的自动组网和数据同步
    * 基于K/V的注册 删除 查找
    * 群组功能，可以将一个值存入某个全局的群组中
+   * 全局字典
    * 可控制的同步方式:
         * 不同步，仅本地修改
         * 延迟同步(默认),本地修改会延迟一段时间再进行同步(避免大量数据涌入时的广播风暴,比如游戏服务器开服登录时)
@@ -40,13 +42,32 @@
     gs:insert(Key :: term(), Value :: term(), sync_type()).
     gs:delete(Key :: term()).
     gs:delete(Key :: term(), sync_type()).
+    gs:delete_if_eql(Key :: term()).
+    gs:delete_if_eql(Key :: term(), sync_type()).
     gs:find(Key :: term()).
 ```
-#### Group
+#### Group/Hashset
 ```Erlang
     gs:join_group(GroupName :: term(), Value ::term()).
     gs:join_group(GroupName :: term(), Value ::term(), sync_type()).
     gs:exit_gropp(GroupName :: term(), Value ::term()).
     gs:exit_group(GroupName :: term(), Value ::term(), sync_type()).
-    gs:traverse_group(GroupName :: term(), fun((Value :: term()) -> any())).
+    gs:group_foreach(GroupName :: term(), fun((Value :: term()) -> any())).
+    gs:group_fodl(GroupName :: term(), fun((Value :: term(), AccIn :: term()) -> AccOut :: term())).
+    gs:print_group(GroupName).
+```
+#### Map
+```Erlang
+    gs:map_insert(MapName :: term(), Key :: term(), Value ::term()).
+    gs:map_insert(MapName :: term(), Value ::term(), sync_type()).
+    gs:map_delete(MapName :: term(), Key ::term()).
+    gs:map_delete(MapName :: term(), Key ::term(), sync_type()).
+    gs:map_find(MapName :: term(), Key :: term()).
+    gs:map_foreach(MapName :: term(), fun((Key :: term(), Value :: term()) -> any())).
+    gs:map_fodl(MapName :: term(), fun((Key :: term(), Value :: term(), AccIn :: term()) -> AccOut :: term())).
+    gs:print_map(MapName :: term()).
+```
+#### sync
+```Erlang
+    gs_sync:modify_sync_delay(non_neg_integer()).
 ```

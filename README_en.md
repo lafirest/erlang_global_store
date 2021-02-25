@@ -12,8 +12,10 @@
     So in the end I wrote this synchronous memory dictionary based on a small delay by default.  
 
 ## features:
+   * Automatic networking and data synchronization based on net_adm:world()
    * Key/Value Insert Delete Find
    * Group, which can store a value in a global group
+   * Global Map 
    * Controllable synchronization method:
          * No synchronization, only local modification
          * Delayed synchronization (default), local modifications will be delayed for a period of time before synchronization (to avoid broadcast storms when a large amount of data is flooded, such as when a game server cluster is opened and logged in)
@@ -44,11 +46,28 @@
     gs:delete(Key :: term(), sync_type()).
     gs:find(Key :: term()).
 ```
-#### Group
+#### Group/Hashset
 ```Erlang
     gs:join_group(GroupName :: term(), Value ::term()).
     gs:join_group(GroupName :: term(), Value ::term(), sync_type()).
     gs:exit_gropp(GroupName :: term(), Value ::term()).
     gs:exit_group(GroupName :: term(), Value ::term(), sync_type()).
-    gs:traverse_group(GroupName :: term(), fun((Value :: term()) -> any())).
+    gs:group_foreach(GroupName :: term(), fun((Value :: term()) -> any())).
+    gs:group_fodl(GroupName :: term(), fun((Value :: term(), AccIn :: term()) -> AccOut :: term())).
+    gs:print_group(GroupName).
+```
+#### Map
+```Erlang
+    gs:map_insert(MapName :: term(), Key :: term(), Value ::term()).
+    gs:map_insert(MapName :: term(), Value ::term(), sync_type()).
+    gs:map_delete(MapName :: term(), Key ::term()).
+    gs:map_delete(MapName :: term(), Key ::term(), sync_type()).
+    gs:map_find(MapName :: term(), Key :: term()).
+    gs:map_foreach(MapName :: term(), fun((Key :: term(), Value :: term()) -> any())).
+    gs:map_fodl(MapName :: term(), fun((Key :: term(), Value :: term(), AccIn :: term()) -> AccOut :: term())).
+    gs:print_map(MapName :: term()).
+```
+#### sync
+```Erlang
+    gs_sync:modify_sync_delay(non_neg_integer()).
 ```
