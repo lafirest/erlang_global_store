@@ -32,25 +32,21 @@
          exit_group/2,
          exit_group/3]).
 
--export([find/1,
-         traverse_group/2]).
-
 -export([remote_sync/2]).
+
+-include("include/gs.hrl").
 
 -define(SERVER, ?MODULE).
 -define(try_sync_arbiter_interval, timer:seconds(1)).
--define(gs_name_table, gs_name_table).
--define(gs_group_table, gs_group_table).
 -define(make_message(S, V1), {message, S, {?FUNCTION_NAME, V1}}).
 -define(make_message(S, V1, V2), {message, S, {?FUNCTION_NAME, V1, V2}}).
 
--record(state, {arbiter :: node()}).
--record(gs_name, {name :: term(), 
-                  value :: term(),
-                  node :: node()}).
--type gs_group() :: #{term() => node()}.
 %-record(gs_group_table, {name :: term(), members :: gs_group()}).
 
+-type store_state() :: wait_sync
+                    | sync_done.
+
+-record(state, {store_state :: store_state()}).
 %%%===================================================================
 %%% API
 %%%===================================================================
@@ -94,26 +90,6 @@ exit_group(Group, Value) ->
 exit_group(Group, Value, SyncType) ->
     gen_server:call(?SERVER, ?make_message(SyncType, Group, Value)).
 
--spec find(term()) -> undefined | term().
-find(Key) ->
-    case ets:lookup(?gs_name_table, Key) of
-        [] ->
-            undefined;
-        [Any] ->
-            Any#gs_name.value
-    end.
-
--spec traverse_group(term(), fun((term()) -> any())) -> ok.
-traverse_group(GroupName, Fun) ->
-    case find_group(GroupName) of
-        undefined ->
-            ok;
-        Group ->
-            Iter = maps:iterator(Group),
-            traverse_group_next(Iter, Fun),
-            ok
-    end.
-
 -spec remote_sync(node(), list(term())) -> ok.
 remote_sync(Node, Messages) ->
     gen_server:cast({?SERVER, Node}, {?FUNCTION_NAME, node(), Messages}).
@@ -145,16 +121,10 @@ start_link() ->
 %%--------------------------------------------------------------------
 init([]) ->
     ok = net_kernel:monitor_nodes(true),
-    {ok, Arbiter} = application:get_env(gs, arbiter),
     ?gs_name_table = ets:new(?gs_name_table, [set, protected, named_table, {keypos, #gs_name.name}, {write_concurrency, false}, {read_concurrency, true}]),
     ?gs_group_table = ets:new(?gs_group_table, [set, protected, named_table, {keypos, 1}, {write_concurrency, false}, {read_concurrency, true}]),
-    case node() =:= Arbiter of
-        true -> 
-            ok;
-        _ ->
-            erlang:send(self(), sync_from_arbiter)
-    end,
-    {ok, #state{arbiter = Arbiter}}.
+    erlang:send(self(), sync_from_arbiter),
+    {ok, #state{store_state = wait_sync}}.
 
 %%--------------------------------------------------------------------
 %% @private
@@ -211,9 +181,9 @@ handle_cast(Msg, State) ->
 %%                                   {stop, Reason, State}
 %% @end
 %%--------------------------------------------------------------------
-handle_info(sync_from_arbiter, #state{arbiter = Arbiter} = State) ->
-    sync_from_arbiter(Arbiter),
-    {noreply, State};
+handle_info(sync_from_arbiter, #state{ } = State) ->
+    sync_from_arbiter(),
+    {noreply, State#state{store_state = sync_done}};
 
 handle_info({nodedown, RemoteNode}, State) ->
     ets:match_delete(?gs_name_table, {'_', '_', '_', RemoteNode}),
@@ -225,7 +195,16 @@ handle_info({nodedown, RemoteNode}, State) ->
               ?gs_group_table),
     {noreply, State};
 
-handle_info({nodeup, _}, State) ->
+handle_info({nodeup, Node}, #state{store_state = StoreState} = State) ->
+    case StoreState of
+        sync_done ->
+            {?SERVER, Node} ! {vote, node()};
+        _ ->
+            ok
+    end,
+    {noreply, State};
+
+handle_info({vote, _}, State) ->
     {noreply, State};
 
 handle_info(Info, State) ->
@@ -270,7 +249,7 @@ handle_message({delete, Key}, _) ->
     ets:delete(?gs_name_table, Key);
 
 handle_message({delete_if_eql, Key, Value}, _) ->
-    case find(Key) of
+    case gs:find(Key) of
         Value ->
             ets:delete(?gs_name_table, Key);
         _ -> 
@@ -283,7 +262,7 @@ handle_message({join_group, GroupName, Value}, Node) ->
     ets:insert(?gs_group_table, {GroupName, Group2});
 
 handle_message({exit_group, GroupName, Value}, _) ->
-    case find_group(GroupName) of
+    case gs:find_group(GroupName) of
         undefined ->
             ok;
         Group ->
@@ -294,30 +273,30 @@ handle_message({exit_group, GroupName, Value}, _) ->
 %%%===================================================================
 %%% Internal functions
 %%%===================================================================
--spec sync_from_arbiter(node()) -> ok.
-sync_from_arbiter(Arbiter) ->
-    error_logger:info_msg("sync from arbiter: ~p ~n", [Arbiter]),
-    case net_adm:ping(Arbiter) of
-        pong ->
+-spec sync_from_arbiter() -> ok.
+sync_from_arbiter() ->
+    error_logger:info_msg("begin sync ~n", []),
+    Nodes = net_adm:world(),
+    case lists:delete(node(), Nodes) of
+        [] ->
+            error_logger:info_msg("sync done", []);
+        _ ->
+            error_logger:info_msg("wait vote~n", []),
+            Arbiter = wait_vote(),
             {ok, NameTable, GroupTable} = gen_server:call({?SERVER, Arbiter}, ?FUNCTION_NAME),
             lists:foreach(fun(E) -> ets:insert(?gs_name_table, E) end, NameTable),
             lists:foreach(fun(E) -> ets:insert(?gs_group_table, E) end, GroupTable),
-            error_logger:info_msg("sync done");
-        _ ->
-            timer:sleep(?try_sync_arbiter_interval),
-            sync_from_arbiter(Arbiter)
+            error_logger:info_msg("sync done from node :~p~n", [Arbiter])
     end.
 
--spec find_group(term()) -> gs_group().
-find_group(GroupName) ->
-    case ets:lookup(?gs_group_table, GroupName) of
-        [] ->
-            undefined;
-        [{_, Group}] ->
-            Group
+-spec wait_vote() -> node().
+wait_vote() ->
+    receive 
+        {vote, Node} ->
+            Node
     end.
 
--spec find_or_create_group(term()) -> gs_group().
+-spec find_or_create_group(term()) -> gs:gs_group().
 find_or_create_group(GroupName) ->
      case ets:lookup(?gs_group_table, GroupName) of
         [] ->
@@ -327,13 +306,3 @@ find_or_create_group(GroupName) ->
         [{_, Group}] ->
             Group
      end.
-
--spec traverse_group_next(maps:iterator(term(), term()), fun((term()) -> any())) -> ok.
-traverse_group_next(Iter, Fun) ->
-    case maps:next(Iter) of
-        {Value, _, Next} ->
-            Fun(Value),
-            traverse_group_next(Next, Fun);
-        _ ->
-            ok
-    end.

@@ -22,13 +22,16 @@
          code_change/3]).
 
 -export([sync/2,
-         modify_sync_delay/1]).
+         modify_sync_delay/1,
+         info/0]).
 
 -define(SERVER, ?MODULE).
 
 -record(state, {sync_delay :: non_neg_integer(),
                 timer_ref :: reference(),
                 messages :: list()}).
+
+-define(default_sync_delay, 30).
 
 %%%===================================================================
 %%% API
@@ -41,7 +44,12 @@ sync(SyncType, Message) ->
 
 -spec modify_sync_delay(non_neg_integer()) -> ok.
 modify_sync_delay(Delay) ->
-    gen_server:cast(?SERVER, {modify_sync_delay, Delay}).
+    gen_server:cast(?SERVER, {modify_sync_delay, Delay}),
+    sync_boardcast({modify_sync_delay, Delay}).
+
+-spec info() -> #state{}.
+info() ->
+    gen_server:call(?SERVER, get_info).
 
 %%--------------------------------------------------------------------
 %% @doc
@@ -69,7 +77,7 @@ start_link() ->
 %% @end
 %%--------------------------------------------------------------------
 init([]) ->
-    {ok, SyncDelay} = application:get_env(gs, sync_delay),
+    SyncDelay = application:get_env(gs, sync_delay, ?default_sync_delay),
     {ok, #state{sync_delay = SyncDelay,
                 messages = [],
                 timer_ref = undefined}}.
@@ -88,6 +96,9 @@ init([]) ->
 %%                                   {stop, Reason, State}
 %% @end
 %%--------------------------------------------------------------------
+handle_call(get_info, _, State) ->
+    {reply, State, State};
+
 handle_call(_Request, _From, State) ->
     Reply = ok,
     {reply, Reply, State}.
@@ -104,7 +115,7 @@ handle_call(_Request, _From, State) ->
 %%--------------------------------------------------------------------
 handle_cast({sync, urgent, Message}, #state{messages = Messages, timer_ref = TimerRef} = State) ->
     cancel_sync_timer(TimerRef),
-    boardcast([Message | Messages]),
+    store_boardcast([Message | Messages]),
     {noreply, State#state{timer_ref = undefined, messages = []}};
 
 handle_cast({sync, delayed, Message}, #state{messages = Messages,
@@ -139,7 +150,7 @@ handle_info(sync_dirty, #state{messages = Messages} = State) ->
     case Messages of
         [] -> ok;
         _ ->
-            boardcast(Messages)
+            store_boardcast(Messages)
     end,
     {noreply, State#state{messages = [], timer_ref = undefined}};
 
@@ -181,7 +192,11 @@ cancel_sync_timer(Ref) ->
     erlang:cancel_timer(Ref),
     ok.
 
--spec boardcast(list()) -> ok.
-boardcast(Messages) ->
+-spec store_boardcast(list()) -> ok.
+store_boardcast(Messages) ->
     lists:foreach(fun(Node) -> gs_store:remote_sync(Node, Messages) end, nodes()).    
+
+-spec sync_boardcast(term()) -> ok.
+sync_boardcast(Message) ->
+    lists:foreach(fun(Node) -> gen_server:cast({?SERVER, Node}, Message) end, nodes()).    
 

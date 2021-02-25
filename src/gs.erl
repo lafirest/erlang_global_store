@@ -20,13 +20,21 @@
          join_group/3,
          exit_group/2,
          exit_group/3,
-         traverse_group/2]).
+         find_group/1,
+         group_foreach/2,
+         group_fold/3]).
 
--export_type([sync_type/0]).
+-export_type([sync_type/0, 
+              gs_group/0]).
+
 -type sync_type() :: local
                    | urgent
                    | delayed.
 
+
+-type gs_group() :: #{term() => node()}.
+
+-include("include/gs.hrl").
 %%%===================================================================
 %%% dict
 %%%===================================================================
@@ -56,7 +64,12 @@ delete_if_eql(Key, Value, SyncType) ->
 
 -spec find(term()) -> undefined | term().
 find(Key) ->
-    gs_store:find(Key).
+    case ets:lookup(?gs_name_table, Key) of
+        [] ->
+            undefined;
+        [Any] ->
+            Any#gs_name.value
+    end.
 
 %%%===================================================================
 %%% group
@@ -77,6 +90,48 @@ exit_group(Group, Value) ->
 exit_group(Group, Value, SyncType) ->
     gs_store:exit_group(Group, Value, SyncType).
 
--spec traverse_group(term(), fun((term()) -> any())) -> ok.
-traverse_group(GroupName, Fun) ->
-    gs_store:traverse_group(GroupName, Fun).
+-spec find_group(term()) -> gs_group().
+find_group(GroupName) ->
+    case ets:lookup(?gs_group_table, GroupName) of
+        [] ->
+            undefined;
+        [{_, Group}] ->
+            Group
+    end.
+
+-spec group_foreach(fun((term()) -> any()), term()) -> ok.
+group_foreach(Fun, GroupName) ->
+    case find_group(GroupName) of
+        undefined ->
+            ok;
+        Group ->
+            Iter = maps:iterator(Group),
+            group_foreach_next(Iter, Fun),
+            ok
+    end.
+
+-spec group_fold(fun((term(), term()) -> any()), term(), term()) -> term().
+group_fold(Fun, Init, GroupName) ->
+    case find_group(GroupName) of
+        undefined ->
+            Init;
+        Group ->
+            maps:fold(fun(Value, _, Acc) ->
+                        Fun(Value, Acc)
+                      end,
+                      Init,
+                      Group)
+    end.
+
+%%%===================================================================
+%%% Internal functions
+%%%===================================================================
+-spec group_foreach_next(maps:iterator(term(), term()), fun((term()) -> any())) -> ok.
+group_foreach_next(Iter, Fun) ->
+    case maps:next(Iter) of
+        {Value, _, Next} ->
+            Fun(Value),
+            group_foreach_next(Next, Fun);
+        _ ->
+            ok
+    end.
