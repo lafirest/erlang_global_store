@@ -166,7 +166,7 @@ init([]) ->
 %% @end
 %%--------------------------------------------------------------------
 handle_call(sync_from_arbiter, _, State) ->
-    {reply, {ok, ets:tab2list(?gs_name_table), ets:tab2list(?gs_group_table)}, State};
+    {reply, {ok, ets:tab2list(?gs_name_table), ets:tab2list(?gs_group_table), ets:tab2list(?gs_map_table)}, State};
 
 handle_call({message, SyncType, Message}, _, State) ->
     handle_message(Message, node()),
@@ -328,9 +328,10 @@ sync_from_arbiter() ->
         _ ->
             error_logger:info_msg("wait vote~n", []),
             Arbiter = wait_vote(),
-            {ok, NameTable, GroupTable} = gen_server:call({?SERVER, Arbiter}, ?FUNCTION_NAME),
+            {ok, NameTable, GroupTable, MapTable} = gen_server:call({?SERVER, Arbiter}, ?FUNCTION_NAME),
             lists:foreach(fun(E) -> ets:insert(?gs_name_table, E) end, NameTable),
             lists:foreach(fun(E) -> ets:insert(?gs_group_table, E) end, GroupTable),
+            lists:foreach(fun(E) -> ets:insert(?gs_map_table, E) end, MapTable),
             error_logger:info_msg("sync done from node :~p~n", [Arbiter])
     end.
 
