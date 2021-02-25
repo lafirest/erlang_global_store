@@ -168,8 +168,9 @@ handle_call({message, SyncType, Message}, _, State) ->
     gs_sync:sync(SyncType, Message),
     {reply, ok, State};
 
-handle_call(_Request, _From, State) ->
+handle_call(Request, _From, State) ->
     Reply = ok,
+    error_logger:error_msg("un handle call: ~p ~n", [Request]),
     {reply, Reply, State}.
 
 %%--------------------------------------------------------------------
@@ -187,7 +188,7 @@ handle_cast({remote_sync, Node, Messages}, State) ->
     {noreply, State};
 
 handle_cast(Msg, State) ->
-    error_logger:error_msg("un handle cast : ~p~n", [Msg]),
+    error_logger:error_msg("un handle cast: ~p~n", [Msg]),
     {noreply, State}.
 
 %%--------------------------------------------------------------------
@@ -217,7 +218,8 @@ handle_info({nodedown, RemoteNode}, State) ->
 handle_info({nodeup, _}, State) ->
     {noreply, State};
 
-handle_info(_Info, State) ->
+handle_info(Info, State) ->
+    error_logger:error_msg("un handle info: ~p~n", [Info]),
     {noreply, State}.
 
 %%--------------------------------------------------------------------
@@ -276,11 +278,13 @@ handle_message({exit_group, GroupName, Value}, _) ->
 %%%===================================================================
 -spec sync_from_arbiter(node()) -> ok.
 sync_from_arbiter(Arbiter) ->
+    error_logger:info_msg("sync from arbiter: ~p ~n", [Arbiter]),
     case net_adm:ping(Arbiter) of
         pong ->
             {ok, NameTable, GroupTable} = gen_server:call({?SERVER, Arbiter}, ?FUNCTION_NAME),
             lists:foreach(fun(E) -> ets:insert(?gs_name_table, E) end, NameTable),
-            lists:foreach(fun(E) -> ets:insert(?gs_group_table, E) end, GroupTable);
+            lists:foreach(fun(E) -> ets:insert(?gs_group_table, E) end, GroupTable),
+            error_logger:info_msg("sync done");
         _ ->
             timer:sleep(?try_sync_arbiter_interval),
             sync_from_arbiter(Arbiter)
