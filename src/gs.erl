@@ -20,12 +20,24 @@
          join_group/3,
          exit_group/2,
          exit_group/3,
-         find_group/1,
          group_foreach/2,
-         group_fold/3]).
+         group_fold/3,
+         print_group/1]).
+
+-export([map_insert/3,
+         map_insert/4,
+         map_delete/2,
+         map_delete/3,
+         map_find/2,
+         map_foreach/2,
+         map_fold/3,
+         print_map/1]).
 
 -export_type([sync_type/0, 
-              gs_group/0]).
+              gs_group/0,
+              gs_map/0]).
+
+-include("include/gs.hrl").
 
 -type sync_type() :: local
                    | urgent
@@ -33,10 +45,10 @@
 
 
 -type gs_group() :: #{term() => node()}.
+-type gs_map() :: #{term() => #map_value{}}.
 
--include("include/gs.hrl").
 %%%===================================================================
-%%% dict
+%%% KV
 %%%===================================================================
 -spec insert(term(), term()) -> ok.
 insert(Key, Value) ->
@@ -68,7 +80,7 @@ find(Key) ->
         [] ->
             undefined;
         [Any] ->
-            Any#gs_name.value
+            Any#key_value.value
     end.
 
 %%%===================================================================
@@ -90,18 +102,9 @@ exit_group(Group, Value) ->
 exit_group(Group, Value, SyncType) ->
     gs_store:exit_group(Group, Value, SyncType).
 
--spec find_group(term()) -> gs_group().
-find_group(GroupName) ->
-    case ets:lookup(?gs_group_table, GroupName) of
-        [] ->
-            undefined;
-        [{_, Group}] ->
-            Group
-    end.
-
--spec group_foreach(fun((term()) -> any()), term()) -> ok.
-group_foreach(Fun, GroupName) ->
-    case find_group(GroupName) of
+-spec group_foreach(term(), fun((term()) -> any())) -> ok.
+group_foreach(GroupName, Fun) ->
+    case gs_store:find_group(GroupName) of
         undefined ->
             ok;
         Group ->
@@ -110,9 +113,9 @@ group_foreach(Fun, GroupName) ->
             ok
     end.
 
--spec group_fold(fun((term(), term()) -> any()), term(), term()) -> term().
-group_fold(Fun, Init, GroupName) ->
-    case find_group(GroupName) of
+-spec group_fold(term(), fun((term(), term()) -> any()), term()) -> term().
+group_fold(GroupName, Fun, Init) ->
+    case gs_store:find_group(GroupName) of
         undefined ->
             Init;
         Group ->
@@ -123,6 +126,70 @@ group_fold(Fun, Init, GroupName) ->
                       Group)
     end.
 
+-spec print_group(term()) -> ok.
+print_group(GroupName) ->
+    group_foreach(GroupName, fun(E) -> io:format("~p~n", [E]) end).
+%%%===================================================================
+%%% Map
+%%%===================================================================
+-spec map_insert(term(), term(), term()) -> ok.
+map_insert(Map, Key, Value) ->
+    gs_store:map_insert(Map, Key, Value).
+
+-spec map_insert(term(), term(), term(), sync_type()) -> ok.
+map_insert(Map, Key, Value, SyncType) ->
+    gs_store:map_insert(Map, Key, Value, SyncType).
+
+-spec map_delete(term(), term()) -> ok.
+map_delete(Map, Key) ->
+    gs_store:map_delete(Map, Key).
+
+-spec map_delete(term(), term(), sync_type()) -> ok.
+map_delete(Map, Key, SyncType) ->
+    gs_store:map_delete(Map, Key, SyncType).
+
+-spec map_find(term(), term()) -> ok.
+map_find(MapName, Key) ->
+    case gs_store:find_map(MapName) of
+        undefined ->
+            undefined;
+        Map ->
+            case maps:get(Key, Map, undefined) of
+                #map_value{value = Value} ->
+                    Value;
+                _ ->
+                    undefined
+            end
+    end.
+
+-spec map_foreach(term(), fun((term(), term()) -> any())) -> ok.
+map_foreach(MapName, Fun) ->
+    case gs_store:find_map(MapName) of
+        undefined ->
+            ok;
+        Map ->
+            Iter = maps:iterator(Map),
+            map_foreach_next(Iter, Fun),
+            ok
+    end.
+
+-spec map_fold(term(), fun((term(), term(), term()) -> any()), term()) -> term().
+map_fold(MapName, Fun, Init) ->
+    case gs_store:find_map(MapName) of
+        undefined ->
+            Init;
+        Map ->
+            maps:fold(fun(Key, Value, Acc) ->
+                        Fun(Key, Value#map_value.value, Acc)
+                      end,
+                      Init,
+                      Map)
+    end.
+
+-spec print_map(term()) -> ok.
+print_map(MapName) ->
+    map_foreach(MapName, fun(K, V) -> io:format("Key : ~p, Value : ~p ~n", [K, V]) end).
+
 %%%===================================================================
 %%% Internal functions
 %%%===================================================================
@@ -131,6 +198,16 @@ group_foreach_next(Iter, Fun) ->
     case maps:next(Iter) of
         {Value, _, Next} ->
             Fun(Value),
+            group_foreach_next(Next, Fun);
+        _ ->
+            ok
+    end.
+
+-spec map_foreach_next(maps:iterator(term(), term()), fun((term(), term()) -> any())) -> ok.
+map_foreach_next(Iter, Fun) ->
+    case maps:next(Iter) of
+        {Key, Value, Next} ->
+            Fun(Key, Value#map_value.value),
             group_foreach_next(Next, Fun);
         _ ->
             ok

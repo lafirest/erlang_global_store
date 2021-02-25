@@ -30,7 +30,14 @@
          join_group/2,
          join_group/3,
          exit_group/2,
-         exit_group/3]).
+         exit_group/3,
+         map_insert/3,
+         map_insert/4,
+         map_delete/2,
+         map_delete/3]).
+
+-export([find_group/1,
+         find_map/1]).
 
 -export([remote_sync/2]).
 
@@ -40,6 +47,7 @@
 -define(try_sync_arbiter_interval, timer:seconds(1)).
 -define(make_message(S, V1), {message, S, {?FUNCTION_NAME, V1}}).
 -define(make_message(S, V1, V2), {message, S, {?FUNCTION_NAME, V1, V2}}).
+-define(make_message(S, V1, V2, V3), {message, S, {?FUNCTION_NAME, V1, V2, V3}}).
 
 %-record(gs_group_table, {name :: term(), members :: gs_group()}).
 
@@ -90,6 +98,22 @@ exit_group(Group, Value) ->
 exit_group(Group, Value, SyncType) ->
     gen_server:call(?SERVER, ?make_message(SyncType, Group, Value)).
 
+-spec map_insert(term(), term(), term()) -> ok.
+map_insert(Map, Key, Value) ->
+    map_insert(Map, Key, Value, delayed).
+
+-spec map_insert(term(), term(), term(), gs:sync_type()) -> ok.
+map_insert(Map, Key, Value, SyncType) ->
+    gen_server:call(?SERVER, ?make_message(SyncType, Map, Key, Value)).
+
+-spec map_delete(term(), term()) -> ok.
+map_delete(Map, Key) ->
+    map_delete(Map, Key, delayed).
+
+-spec map_delete(term(), term(), gs:sync_type()) -> ok.
+map_delete(Map, Key, SyncType) ->
+    gen_server:call(?SERVER, ?make_message(SyncType, Map, Key)).
+
 -spec remote_sync(node(), list(term())) -> ok.
 remote_sync(Node, Messages) ->
     gen_server:cast({?SERVER, Node}, {?FUNCTION_NAME, node(), Messages}).
@@ -121,8 +145,9 @@ start_link() ->
 %%--------------------------------------------------------------------
 init([]) ->
     ok = net_kernel:monitor_nodes(true),
-    ?gs_name_table = ets:new(?gs_name_table, [set, protected, named_table, {keypos, #gs_name.name}, {write_concurrency, false}, {read_concurrency, true}]),
+    ?gs_name_table = ets:new(?gs_name_table, [set, protected, named_table, {keypos, #key_value.key}, {write_concurrency, false}, {read_concurrency, true}]),
     ?gs_group_table = ets:new(?gs_group_table, [set, protected, named_table, {keypos, 1}, {write_concurrency, false}, {read_concurrency, true}]),
+    ?gs_map_table = ets:new(?gs_map_table, [set, protected, named_table, {keypos, 1}, {write_concurrency, false}, {read_concurrency, true}]),
     erlang:send(self(), sync_from_arbiter),
     {ok, #state{store_state = wait_sync}}.
 
@@ -193,6 +218,12 @@ handle_info({nodedown, RemoteNode}, State) ->
               end,
               ok,
               ?gs_group_table),
+    ets:foldl(fun({MapName, Map}, _) ->
+                      Map2 = maps:filter(fun(_, Value) -> Value#map_value.node =/= RemoteNode end, Map),
+                      ets:insert(?gs_map_table, {MapName, Map2})
+              end,
+              ok,
+              ?gs_map_table),
     {noreply, State};
 
 handle_info({nodeup, Node}, #state{store_state = StoreState} = State) ->
@@ -241,9 +272,9 @@ code_change(_OldVsn, State, _Extra) ->
 %%%===================================================================
 -spec handle_message(term(), node()) -> ok.
 handle_message({insert, Key, Value}, Node) ->
-    ets:insert(?gs_name_table, #gs_name{name = Key,
-                                        value = Value,
-                                        node = Node});
+    ets:insert(?gs_name_table, #key_value{key = Key,
+                                          value = Value,
+                                          node = Node});
 
 handle_message({delete, Key}, _) ->
     ets:delete(?gs_name_table, Key);
@@ -262,12 +293,26 @@ handle_message({join_group, GroupName, Value}, Node) ->
     ets:insert(?gs_group_table, {GroupName, Group2});
 
 handle_message({exit_group, GroupName, Value}, _) ->
-    case gs:find_group(GroupName) of
+    case find_group(GroupName) of
         undefined ->
             ok;
         Group ->
             Group2 = maps:remove(Value, Group),
             ets:insert(?gs_group_table, {GroupName, Group2})
+    end;
+
+handle_message({map_insert, MapName, Key, Value}, Node) ->
+    Map = find_or_create_map(MapName),
+    Map2 = Map#{Key => #map_value{value = Value, node = Node}},
+    ets:insert(?gs_map_table, {MapName, Map2});
+
+handle_message({map_delete, MapName, Key}, _) ->
+    case find_map(MapName) of
+        undefined ->
+            ok;
+        Map ->
+            Map2 = maps:remote(Key, Map),
+            ets:insert(?gs_map_table, {MapName, Map2})
     end.
 
 %%%===================================================================
@@ -298,11 +343,36 @@ wait_vote() ->
 
 -spec find_or_create_group(term()) -> gs:gs_group().
 find_or_create_group(GroupName) ->
-     case ets:lookup(?gs_group_table, GroupName) of
+    find_or_create_map(?gs_group_table, GroupName).
+
+-spec find_or_create_map(term()) -> gs:gs_map().
+find_or_create_map(MapName) ->
+    find_or_create_map(?gs_map_table, MapName).
+
+-spec find_or_create_map(atom(), term()) -> maps:map(). 
+find_or_create_map(TableName, MapName) ->
+     case ets:lookup(TableName, MapName) of
         [] ->
              New = #{},
-             ets:insert(?gs_group_table, {GroupName, New}),
+             ets:insert(TableName, {MapName, New}),
              New;
         [{_, Group}] ->
             Group
      end.
+
+-spec find_group(term()) -> gs:gs_group().
+find_group(GroupName) ->
+    find_map(?gs_group_table, GroupName).
+
+-spec find_map(term()) -> gs:gs_map().
+find_map(MapName) ->
+    find_map(?gs_map_table, MapName).
+
+-spec find_map(atom(), term()) -> maps:map().
+find_map(TableName, GroupName) ->
+    case ets:lookup(TableName, GroupName) of
+        [] ->
+            undefined;
+        [{_, Group}] ->
+            Group
+    end.
