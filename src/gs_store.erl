@@ -72,7 +72,7 @@ delete(Key, SyncType) ->
 
 -spec delete_if_eql(term(), term()) -> ok.
 delete_if_eql(Key, Value) ->
-    delete_if_eql(Key, Value).
+    delete_if_eql(Key, Value, delayed).
 
 -spec delete_if_eql(term(), term(), gs:sync_type()) -> ok.
 delete_if_eql(Key, Value, SyncType) ->
