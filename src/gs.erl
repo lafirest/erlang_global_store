@@ -67,6 +67,6 @@ exit_group(Group, Value) ->
 exit_group(Group, Value, SyncType) ->
     gs_store:exit_group(Group, Value, SyncType).
 
--spec traverse_group(term(), fun((term()) -> any())) -> boolean().
+-spec traverse_group(term(), fun((term()) -> any())) -> ok.
 traverse_group(GroupName, Fun) ->
     gs_store:traverse_group(GroupName, Fun).

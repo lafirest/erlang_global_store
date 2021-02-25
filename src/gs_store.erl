@@ -39,18 +39,15 @@
 -define(try_sync_arbiter_interval, timer:seconds(1)).
 -define(gs_name_table, gs_name_table).
 -define(gs_group_table, gs_group_table).
+-define(make_message(S, V1), {message, S, {?FUNCTION_NAME, V1}}).
+-define(make_message(S, V1, V2), {message, S, {?FUNCTION_NAME, V1, V2}}).
 
 -record(state, {arbiter :: node()}).
 -record(gs_name, {name :: term(), 
-                   value :: term(),
-                   node :: node()}).
+                  value :: term(),
+                  node :: node()}).
 %-record(gs_group_table, {name :: term(), members :: gb_sets:gb_sets()}).
--record(group_value, {value :: term(),
-                      node :: node()}).
-
-
--define(make_message(S, V1), {message, S, {?FUNCTION_NAME, V1}}).
--define(make_message(S, V1, V2), {message, S, {?FUNCTION_NAME, V1, V2}}).
+-type gs_group() :: #{term() => node()}.
 
 %%%===================================================================
 %%% API
@@ -96,13 +93,13 @@ find(Key) ->
             Any#gs_name.value
     end.
 
--spec traverse_group(term(), fun((term()) -> any())) -> boolean().
+-spec traverse_group(term(), fun((term()) -> any())) -> ok.
 traverse_group(GroupName, Fun) ->
     case find_group(GroupName) of
         undefined ->
             ok;
         Group ->
-            Iter = gb_sets:iterator(Group),
+            Iter = maps:iterator(Group),
             traverse_group_next(Iter, Fun),
             ok
     end.
@@ -210,7 +207,7 @@ handle_info(sync_from_arbiter, #state{arbiter = Arbiter} = State) ->
 handle_info({nodedown, RemoteNode}, State) ->
     ets:match_delete(?gs_name_table, {'_', '_', '_', RemoteNode}),
     ets:foldl(fun({GroupName, Group}, _) ->
-                      Group2 = gb_sets:filter(fun(Value) -> Value#group_value.node =/= RemoteNode end, Group),
+                      Group2 = maps:filter(fun(_, Node) -> Node =/= RemoteNode end, Group),
                       ets:insert(?gs_group_table, {GroupName, Group2})
               end,
               ok,
@@ -261,9 +258,8 @@ handle_message({delete, Key}, _) ->
     ets:delete(?gs_name_table, Key);
 
 handle_message({join_group, GroupName, Value}, Node) ->
-    GroupValue = #group_value{value = Value, node = Node},
     Group = find_or_create_group(GroupName),
-    Group2 = gb_sets:add(GroupValue, Group),
+    Group2 = Group#{Value => Node},
     ets:insert(?gs_group_table, {GroupName, Group2});
 
 handle_message({exit_group, GroupName, Value}, _) ->
@@ -271,7 +267,7 @@ handle_message({exit_group, GroupName, Value}, _) ->
         undefined ->
             ok;
         Group ->
-            Group2 = gb_sets:delete(Value, Group),
+            Group2 = maps:remove(Value, Group),
             ets:insert(?gs_group_table, {GroupName, Group2})
     end.
 
@@ -290,7 +286,7 @@ sync_from_arbiter(Arbiter) ->
             sync_from_arbiter(Arbiter)
     end.
 
--spec find_group(term()) -> gb_sets:gb_sets() | undefined.
+-spec find_group(term()) -> gs_group().
 find_group(GroupName) ->
     case ets:lookup(?gs_group_table, GroupName) of
         [] ->
@@ -299,7 +295,7 @@ find_group(GroupName) ->
             Group
     end.
 
--spec find_or_create_group(term()) -> gb_sets:gb_sets().
+-spec find_or_create_group(term()) -> gs_group().
 find_or_create_group(GroupName) ->
      case ets:lookup(?gs_group_table, GroupName) of
         [] ->
@@ -310,11 +306,11 @@ find_or_create_group(GroupName) ->
             Group
      end.
 
--spec traverse_group_next(gb_sets:iter(), fun((term()) -> any())) -> ok.
+-spec traverse_group_next(maps:iterator(term(), term()), fun((term()) -> any())) -> ok.
 traverse_group_next(Iter, Fun) ->
-    case gb_sets:next(Iter) of
-        {E, Next} ->
-            Fun(E#group_value.value),
+    case maps:next(Iter) of
+        {Value, _, Next} ->
+            Fun(Value),
             traverse_group_next(Next, Fun);
         _ ->
             ok
