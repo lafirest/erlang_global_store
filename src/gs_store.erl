@@ -46,8 +46,8 @@
 -record(gs_name, {name :: term(), 
                   value :: term(),
                   node :: node()}).
-%-record(gs_group_table, {name :: term(), members :: gb_sets:gb_sets()}).
 -type gs_group() :: #{term() => node()}.
+%-record(gs_group_table, {name :: term(), members :: gs_group()}).
 
 %%%===================================================================
 %%% API
@@ -303,7 +303,7 @@ find_group(GroupName) ->
 find_or_create_group(GroupName) ->
      case ets:lookup(?gs_group_table, GroupName) of
         [] ->
-             New = gb_sets:new(),
+             New = #{},
              ets:insert(?gs_group_table, {GroupName, New}),
              New;
         [{_, Group}] ->
