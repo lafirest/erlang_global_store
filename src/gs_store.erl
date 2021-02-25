@@ -25,6 +25,8 @@
          insert/3,
          delete/1,
          delete/2,
+         delete_if_eql/2,
+         delete_if_eql/3,
          join_group/2,
          join_group/3,
          exit_group/2,
@@ -67,6 +69,14 @@ delete(Key) ->
 -spec delete(term(), gs:sync_type()) -> ok.
 delete(Key, SyncType) ->
     gen_server:call(?SERVER, ?make_message(SyncType, Key)).
+
+-spec delete_if_eql(term(), term()) -> ok.
+delete_if_eql(Key, Value) ->
+    delete_if_eql(Key, Value).
+
+-spec delete_if_eql(term(), term(), gs:sync_type()) -> ok.
+delete_if_eql(Key, Value, SyncType) ->
+    gen_server:call(?SERVER, ?make_message(SyncType, Key, Value)).
 
 -spec join_group(term(), term()) -> ok.
 join_group(Group, Value) ->
@@ -258,6 +268,14 @@ handle_message({insert, Key, Value}, Node) ->
 
 handle_message({delete, Key}, _) ->
     ets:delete(?gs_name_table, Key);
+
+handle_message({delete_if_eql, Key, Value}, _) ->
+    case find(Key) of
+        Value ->
+            ets:delete(?gs_name_table, Key);
+        _ -> 
+            ok
+    end;
 
 handle_message({join_group, GroupName, Value}, Node) ->
     Group = find_or_create_group(GroupName),

@@ -12,6 +12,8 @@
          insert/3,
          delete/1,
          delete/2,
+         delete_if_eql/2,
+         delete_if_eql/3,
          find/1]).
 
 -export([join_group/2,
@@ -43,6 +45,14 @@ delete(Key) ->
 -spec delete(term(), sync_type()) -> ok.
 delete(Key, SyncType) ->
     gs_store:delete(Key, SyncType).
+
+-spec delete_if_eql(term(), term()) -> ok.
+delete_if_eql(Key, Value) ->
+    gs_store:delete_if_eql(Key, Value).
+
+-spec delete_if_eql(term(), term(), sync_type()) -> ok.
+delete_if_eql(Key, Value, SyncType) ->
+    gs_store:delete_if_eql(Key, Value, SyncType).
 
 -spec find(term()) -> undefined | term().
 find(Key) ->
