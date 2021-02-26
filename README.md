@@ -23,14 +23,13 @@
    * 数据冲突解决,因为这是很简单的应用，所以不存在所谓的数据冲突解决,所有写入都是直接覆盖之前的数据
    * 数据保护,同上,任何节点都能对任何键直接写入
 ## 使用
-### 环境变量配置:
-   需要在application env中提供以下两个变量:
+### 可选的环境变量:
+   可以在application env中提供下面的变量:
      
-      1. arbiter 裁决服务器，用于在新节点登录时，获取旧的数据
-      2. sync_delay 同步延迟
+      1. sync_delay 同步延迟
    如果是使用rebar,则直接在sys.config中加入以下设置即可
 ```Erlang
-    {gs, [{arbiter, 's1@127.0.0.1'}, {sync_delay, 100}]}
+    {gs, [{sync_delay, 100}]}
 ```
 ### API
 #### KV
@@ -42,8 +41,8 @@
     gs:insert(Key :: term(), Value :: term(), sync_type()).
     gs:delete(Key :: term()).
     gs:delete(Key :: term(), sync_type()).
-    gs:delete_if_eql(Key :: term()).
-    gs:delete_if_eql(Key :: term(), sync_type()).
+    gs:delete_if_eql(Key :: term(), Value :: term()).
+    gs:delete_if_eql(Key :: term(), Value :: term(), sync_type()).
     gs:find(Key :: term()).
 ```
 #### Group/Hashset
@@ -71,3 +70,7 @@
 ```Erlang
     gs_sync:modify_sync_delay(non_neg_integer()).
 ```
+
+### TODO
+   * 全局同步锁,解决中途加入的节点可能无法达到最终一致性的问题
+   * 计数器

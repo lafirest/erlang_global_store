@@ -25,14 +25,12 @@
    * Data conflict resolution, because this is a very simple application, so there is no so-called data conflict resolution, all writes directly overwrite the previous data
    * Data protection, as above, any node can write directly to any key
 ## how to use
-### env variable configuration:
-   The following two variables need to be provided in the application env:
+### optional environment variables
         
-        1. Arbiter arbitration server, used to obtain old data when logging in to a new node
-        2. sync_delay synchronization delay
+        1. sync_delay synchronization delay
    If you are using rebar, add the following settings directly in sys.config
 ```Erlang
-    {gs, [{arbiter, 's1@127.0.0.1'}, {sync_delay, 100}]}
+    {gs, [{sync_delay, 100}]}
 ```
 ### API
 #### KV
@@ -44,6 +42,8 @@
     gs:insert(Key :: term(), Value :: term(), sync_type()).
     gs:delete(Key :: term()).
     gs:delete(Key :: term(), sync_type()).
+    gs:delete_if_eql(Key :: term(), Value :: term()).
+    gs:delete_if_eql(Key :: term(), Value :: term(), sync_type()).
     gs:find(Key :: term()).
 ```
 #### Group/Hashset
@@ -71,3 +71,6 @@
 ```Erlang
     gs_sync:modify_sync_delay(non_neg_integer()).
 ```
+### TODO
+   * Global synchronization lock, used to solve the problem the nodes which join midway may not be able to achieve eventual consistency
+   * Counter
